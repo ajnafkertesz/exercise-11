@@ -1,0 +1,173 @@
+---
+title: "exercise-11"
+author: "Ajna Kertesz"
+date: '2022-04-17'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exploring the data
+
+The skim function shows that there are 7 character type data coulmns: Species1, Family1, Order1, Habitat, Trophic.Level, Trophic.Niche,Primary.Lifestyle, the remaining coulmns contain numeric data. 
+
+
+```{r data and libs, echo=FALSE, message=FALSE, warning=FALSE}
+
+#load libraries
+library(tidyverse)
+library(dplyr)
+library(sjPlot)
+library(skimr)
+library(infer)
+library(ggplot2)
+
+#read in data
+f<- "https://raw.githubusercontent.com/difiore/ada-2022-datasets/main/AVONETdataset1.csv"
+d<- read_csv(f, col_names = TRUE)
+
+#select variables
+d<-d%>%select(Species1, Family1, Order1, Beak.Length_Culmen, Beak.Width, Beak.Depth, Tarsus.Length, Wing.Length, Tail.Length, Mass, Habitat, Migration, Trophic.Level, Trophic.Niche,Primary.Lifestyle, Min.Latitude, Max.Latitude, Centroid.Latitude, Range.Size)
+
+skim(d)
+
+```
+
+## Challenge 1
+
+```{r challenge 1, echo=FALSE}
+
+#step1
+
+d$Migration<-as.character(d$Migration)
+d$logMass<-log(d$Mass)
+
+ggplot(data=d %>% drop_na (Trophic.Level), 
+       aes(x=Trophic.Level, y=log(Mass)))+
+  geom_boxplot()
+
+ggplot(data=d %>% drop_na(Migration), 
+       aes(x=(Migration), y=log(Mass)))+
+  geom_boxplot()
+
+#step2
+
+m1<-lm(log(Mass) ~Trophic.Level, data=d)
+m2<-lm(log(Mass) ~as.factor(Migration), data=d)
+
+summary(m1)
+summary(m2)
+tab_model(m1, m2, dv.labels=c('m1','m2'))
+#the F value is very large for both models, so it seems that there isn't a significant relationship between Mass and migration or trophic level
+
+# for migration (m2), the reference category is Carnivore, and the Omnivore is the most different from the reference since it has the largest (not significant) p-value
+
+#releveling for Migration "3" as reference category
+d<-d %>%mutate(Migration=relevel(factor(Migration), ref="3"))
+m3<-lm(log(Mass) ~as.factor(Migration), data=d)
+summary(m3)
+
+#Step3
+
+m<- aov(logMass ~ Migration,data = d)
+
+posthoc <- TukeyHSD(m, which = "Migration", ordered = TRUE, conf.level = 0.95)
+posthoc 
+
+#step4
+
+d%>%
+  specify(logMass ~ Trophic.Level) %>%
+  calculate(stat="F")
+
+
+```
+
+## Challenge 2
+
+```{r challenge 2, echo=FALSE}
+
+#step1
+
+#calculate relative beak length (residual of log(Beak.Length~log(Mass))
+m_beak<- lm(log(Beak.Length_Culmen)~log(Mass), data=d)
+summary(m_beak) 
+beak_res <- resid(m_beak)
+d <- cbind(d, beak_res)
+
+#calculate relative tarsus length (residual of log(Tarsus.Length~log(Mass))
+m_tarsus<- lm(log(Tarsus.Length)~log(Mass), data=d)
+summary(m_tarsus)
+tarsus_res <- resid(m_tarsus)
+d <- cbind(d, tarsus_res)
+  
+#step2
+
+#Make a boxplot or violin plot of your new relative tarsus length variable in relation to Primary.Lifestyle and of your new relative beak length variable in relation to Trophic.Niche
+
+
+boxplot(tarsus_res~Primary.Lifestyle, data=d)
+boxplot(beak_res~Trophic.Niche, data=d)
+
+
+#step3
+
+#ANOVA for geographic range and migratory status
+hist(d$Range.Size) # need to use log, so it's not as skewed
+range <- aov(data = d, log(Range.Size) ~ Migration)
+summary(range)
+
+posthoc2 <- TukeyHSD(range, which = "Migration", ordered = TRUE, conf.level = 0.95)
+posthoc2 
+
+#step4
+d_pass<-filter(d, Order1=="Passeriformes")
+
+beak_length1 <- aov(data = d, beak_res ~ Primary.Lifestyle)
+summary(beak_length1)
+
+beak_length2 <- aov(data = d, beak_res ~ Trophic.Level)
+summary(beak_length2)
+
+#boxplot for each and combined
+boxplot(beak_res~Primary.Lifestyle, data=d)
+boxplot(beak_res~Trophic.Level, data=d)
+boxplot(beak_res~Primary.Lifestyle+Trophic.Level, data=d)
+
+#linear models for each
+bl1<-lm(beak_res~Primary.Lifestyle, data=d)
+bl2<-lm(beak_res~Trophic.Level, data=d)
+
+summary(bl1)
+summary(bl2)
+
+#step5
+bl3<-lm(beak_res~Trophic.Level+Primary.Lifestyle, data=d)
+summary(bl3)
+#relative beak length is related to Trophic level, but not so much to primary lifestyle (especially it is omnivore or scavenger)
+
+#step6
+bl4<-lm(beak_res~Trophic.Level:Primary.Lifestyle, data=d)
+summary(bl4)
+
+#Relative beak length is not related to the interaction of Trophic level and Primary lifestyle
+
+#step7
+
+interaction.plot(
+  x.factor = d$Trophic.Level,
+  xlab = "Trophic Level",
+  trace.factor = d$Primary.Lifestyle,
+  trace.label = "Primary Lifestyle",
+  response = d$beak_res,
+  fun = base::mean, 
+  ylab = "Mean Residual Beak Length"
+)
+
+```
+
+
+
+
